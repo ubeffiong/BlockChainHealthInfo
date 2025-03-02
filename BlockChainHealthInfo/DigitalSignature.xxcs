@@ -1,0 +1,519 @@
+﻿//using Newtonsoft.Json;
+//using System;
+//using System.Collections.Concurrent;
+//using System.Collections.Generic;
+//using System.Data.Common;
+//using System.IO;
+//using System.Linq;
+//using System.Reflection;
+//using System.Security;
+//using System.Security.Cryptography;
+//using System.Security.Cryptography.X509Certificates;
+//using System.Text;
+//using System.Threading;
+//using System.Threading.Tasks;
+//using Microsoft.EntityFrameworkCore;
+//using Microsoft.EntityFrameworkCore.Diagnostics;
+//using Microsoft.Extensions.Hosting;
+
+//namespace BlockChainHealthInfo
+//{
+//    #region Software–Based Key Management
+
+//    // Represents a software–based key along with temporal and environmental metadata.
+//    public class SoftwareKey
+//    {
+//        public ECDsa Key { get; set; }
+//        public DateTimeOffset ValidFrom { get; set; }
+//        public DateTimeOffset ValidTo { get; set; }
+//        public Dictionary<string, string> EnvironmentalValues { get; set; }
+//    }
+
+//    // Centralized key manager that creates, signs, verifies, and revokes software keys.
+//    public class DigitalSignature
+//    {
+//        private readonly MfaChallengeService _mfaService;
+//        // In–memory key store.
+//        private readonly ConcurrentDictionary<string, SoftwareKey> _keys = new ConcurrentDictionary<string, SoftwareKey>();
+
+//        public DigitalSignature(MfaChallengeService mfaService)
+//        {
+//            _mfaService = mfaService;
+//        }
+
+//        /// <summary>
+//        /// Creates a new ECDsa key pair (NIST P-521) with metadata from environmentalValues.
+//        /// Expects environmentalValues to include "ValidFrom" and "ValidTo" as Unix timestamps.
+//        /// </summary>
+//        public async Task<ECDsa> CreateKeyPairAsync(string keyName, Dictionary<string, string> environmentalValues)
+//        {
+//            // Create a new key.
+//            var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP521);
+
+//            // Parse valid-from and valid-to values.
+//            if (!environmentalValues.TryGetValue("ValidFrom", out var validFromStr) ||
+//                !environmentalValues.TryGetValue("ValidTo", out var validToStr) ||
+//                !long.TryParse(validFromStr, out long validFromUnix) ||
+//                !long.TryParse(validToStr, out long validToUnix))
+//            {
+//                throw new ArgumentException("Environmental values must include 'ValidFrom' and 'ValidTo' as Unix timestamps.");
+//            }
+//            var validFrom = DateTimeOffset.FromUnixTimeSeconds(validFromUnix);
+//            var validTo = DateTimeOffset.FromUnixTimeSeconds(validToUnix);
+
+//            var softwareKey = new SoftwareKey
+//            {
+//                Key = ecdsa,
+//                ValidFrom = validFrom,
+//                ValidTo = validTo,
+//                EnvironmentalValues = new Dictionary<string, string>(environmentalValues)
+//            };
+
+//            _keys[keyName] = softwareKey;
+//            return ecdsa;
+//        }
+
+//        /// <summary>
+//        /// Signs data using the key identified by keyName. MFA is validated using the "MfaToken" in environmentalValues.
+//        /// </summary>
+//        public byte[] SignData(byte[] data, string keyName, Dictionary<string, string> environmentalValues)
+//        {
+//            if (!environmentalValues.ContainsKey("MfaToken") ||
+//                !_mfaService.ValidateHardwareToken(environmentalValues["MfaToken"]))
+//            {
+//                throw new SecurityException("MFA validation failed");
+//            }
+//            SoftwareKey softwareKey = RetrieveKey(keyName, environmentalValues);
+//            if (!new TemporalKeyPolicy().IsKeyValid(softwareKey))
+//            {
+//                throw new SecurityException("Expired key");
+//            }
+//            return softwareKey.Key.SignData(data, HashAlgorithmName.SHA512);
+//        }
+
+//        /// <summary>
+//        /// Verifies the provided signature using the key identified by keyName.
+//        /// </summary>
+//        public bool VerifyData(byte[] data, byte[] signature, string keyName, Dictionary<string, string> environmentalValues)
+//        {
+//            if (!environmentalValues.ContainsKey("MfaToken") ||
+//                !_mfaService.ValidateHardwareToken(environmentalValues["MfaToken"]))
+//            {
+//                throw new SecurityException("MFA validation failed");
+//            }
+//            SoftwareKey softwareKey = RetrieveKey(keyName, environmentalValues);
+//            if (!new TemporalKeyPolicy().IsKeyValid(softwareKey))
+//            {
+//                throw new SecurityException("Expired key");
+//            }
+//            return softwareKey.Key.VerifyData(data, signature, HashAlgorithmName.SHA512);
+//        }
+
+//        private SoftwareKey RetrieveKey(string keyName, Dictionary<string, string> environmentalValues)
+//        {
+//            if (!environmentalValues.ContainsKey("MfaToken") ||
+//                !_mfaService.ValidateHardwareToken(environmentalValues["MfaToken"]))
+//            {
+//                throw new SecurityException("MFA required for key access");
+//            }
+//            if (_keys.TryGetValue(keyName, out SoftwareKey softwareKey))
+//            {
+//                return softwareKey;
+//            }
+//            throw new KeyNotFoundException($"Key '{keyName}' not found.");
+//        }
+
+//        /// <summary>
+//        /// Revokes the key by removing it from the key store.
+//        /// </summary>
+//        public void RevokeKey(string keyName, string reason)
+//        {
+//            _keys.TryRemove(keyName, out _);
+//            Console.WriteLine($"Key {keyName} revoked. Reason: {reason}");
+//        }
+//    }
+
+//    // Checks whether a SoftwareKey is valid based on its temporal metadata.
+//    public class TemporalKeyPolicy
+//    {
+//        public bool IsKeyValid(SoftwareKey softwareKey)
+//        {
+//            var now = DateTimeOffset.UtcNow;
+//            return now >= softwareKey.ValidFrom && now <= softwareKey.ValidTo;
+//        }
+//    }
+
+//    #endregion
+
+//    #region Environmental & Rotation Services
+
+//    // Provides environmental values such as current date, user ID, app version, etc.
+//    public class EnvironmentalKeyService
+//    {
+//        public Dictionary<string, string> GetCurrentEnvironmentalValues(string userId)
+//        {
+//            return new Dictionary<string, string>
+//            {
+//                { "Day", DateTime.UtcNow.Day.ToString() },
+//                { "Month", DateTime.UtcNow.Month.ToString() },
+//                { "UserID", userId },
+//                { "AppVersion", Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "1.0.0" },
+//                // For key validity, you can supply your own timestamps.
+//                { "ValidFrom", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString() },
+//                { "ValidTo", DateTimeOffset.UtcNow.AddYears(1).ToUnixTimeSeconds().ToString() }
+//            };
+//        }
+
+//        // Generates a hash based on database properties for key rotation.
+//        public string GenerateRotationKeyHash(DbContext dbContext, string secret)
+//        {
+//            var dbProperties = new
+//            {
+//                ServerVersion = dbContext.Database.GetDbConnection().ServerVersion,
+//                DummyValue = 12345
+//            };
+
+//            using (var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secret)))
+//            {
+//                var json = JsonConvert.SerializeObject(dbProperties);
+//                var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(json));
+//                return Convert.ToBase64String(hash);
+//            }
+//        }
+//    }
+
+//    // A simple key rotation service that rotates keys on a set interval.
+//    public class KeyRotationService : BackgroundService
+//    {
+//        private readonly DigitalSignature _keyManager;
+//        private readonly DbContext _dbContext; // For rotation hash generation if needed.
+//        private readonly TimeSpan _rotationInterval = TimeSpan.FromHours(6);
+
+//        public KeyRotationService(DigitalSignature keyManager, DbContext dbContext)
+//        {
+//            _keyManager = keyManager;
+//            _dbContext = dbContext;
+//        }
+
+//        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+//        {
+//            while (!stoppingToken.IsCancellationRequested)
+//            {
+//                var now = DateTimeOffset.UtcNow;
+//                // Rotate key with a new key name.
+//                string newKeyName = $"Key_{Guid.NewGuid()}";
+//                var envService = new EnvironmentalKeyService();
+//                var environmentalValues = envService.GetCurrentEnvironmentalValues("system");
+//                // Set validity for the new key.
+//                environmentalValues["ValidFrom"] = now.ToUnixTimeSeconds().ToString();
+//                environmentalValues["ValidTo"] = now.AddYears(1).ToUnixTimeSeconds().ToString();
+
+//                await _keyManager.CreateKeyPairAsync(newKeyName, environmentalValues);
+//                Console.WriteLine($"Rotated key: {newKeyName}");
+//                await Task.Delay(_rotationInterval, stoppingToken);
+//            }
+//        }
+//    }
+
+//    #endregion
+
+//    #region EF Core Interceptors
+
+//    // Intercepts EF Core commands to enforce digital signatures on queries.
+//    public class SignatureEnforcementInterceptor : DbCommandInterceptor
+//    {
+//        private readonly EnvironmentalKeyService _environmentalService;
+//        private readonly DigitalSignature _keyManager;
+
+//        public SignatureEnforcementInterceptor(EnvironmentalKeyService environmentalService, DigitalSignature keyManager)
+//        {
+//            _environmentalService = environmentalService;
+//            _keyManager = keyManager;
+//        }
+
+//        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+//            DbCommand command,
+//            CommandEventData eventData,
+//            InterceptionResult<DbDataReader> result,
+//            CancellationToken cancellationToken = default)
+//        {
+//            // Retrieve current user from DbContext (stubbed).
+//            var user = eventData.Context.GetCurrentUser();
+//            var envValues = _environmentalService.GetCurrentEnvironmentalValues(user.Id);
+
+//            if (!command.Parameters.Contains("@signature"))
+//                throw new SecurityException("Unsigned database operation");
+
+//            string signatureParam = command.Parameters["@signature"].Value.ToString();
+//            byte[] computedHash = ComputeCommandHash(command.CommandText);
+
+//            // For this example, use a placeholder key name "CurrentKey".
+//            if (!_keyManager.VerifyData(computedHash, Convert.FromBase64String(signatureParam), "CurrentKey", envValues))
+//                throw new SecurityException("Invalid operation signature");
+
+//            return await base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+//        }
+
+//        private byte[] ComputeCommandHash(string commandText)
+//        {
+//            using (var sha = SHA512.Create())
+//            {
+//                return sha.ComputeHash(Encoding.UTF8.GetBytes(commandText));
+//            }
+//        }
+//    }
+
+//    // Intercepts EF Core non-query commands to detect anomalies in operations.
+//    public class AnomalyDetectionInterceptor : DbCommandInterceptor
+//    {
+//        private readonly BehavioralAnomalyDetector _anomalyDetector;
+
+//        public AnomalyDetectionInterceptor(BehavioralAnomalyDetector anomalyDetector)
+//        {
+//            _anomalyDetector = anomalyDetector;
+//        }
+
+//        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+//            DbCommand command,
+//            CommandEventData eventData,
+//            InterceptionResult<int> result,
+//            CancellationToken cancellationToken = default)
+//        {
+//            var user = eventData.Context.GetCurrentUser();
+//            OperationType opType = DetectOperationType(command.CommandText);
+//            int recordCount = GetAffectedRecordCount(command);
+//            var operation = new DatabaseOperation(opType, recordCount, DateTimeOffset.UtcNow);
+//            _anomalyDetector.AnalyzeOperation(user, operation);
+//            return await base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+//        }
+
+//        private OperationType DetectOperationType(string commandText)
+//        {
+//            if (commandText.IndexOf("DELETE", StringComparison.OrdinalIgnoreCase) >= 0)
+//                return OperationType.BulkDelete;
+//            return OperationType.Unknown;
+//        }
+
+//        private int GetAffectedRecordCount(DbCommand command)
+//        {
+//            // Simplified: return a dummy record count.
+//            return 1;
+//        }
+//    }
+
+
+//    public class BehavioralAnomalyDetector
+//    {
+//        private readonly ConcurrentDictionary<string, UserBehaviorProfile> _profiles = new ConcurrentDictionary<string, UserBehaviorProfile>();
+//        private readonly DigitalSignature _keyManager;
+//        private readonly IAlertService _alertService;
+
+//        public BehavioralAnomalyDetector(DigitalSignature keyManager, IAlertService alertService)
+//        {
+//            _keyManager = keyManager;
+//            _alertService = alertService;
+//        }
+
+//        /// <summary>
+//        /// Analyzes a database operation performed by a user and triggers an alert if the behavior is anomalous.
+//        /// </summary>
+//        public void AnalyzeOperation(User user, DatabaseOperation operation)
+//        {
+//            // Retrieve or create the behavior profile for the user.
+//            var profile = _profiles.GetOrAdd(user.Id, id => new UserBehaviorProfile());
+
+//            // Calculate a risk score based on the user's profile and current operation.
+//            double riskScore = CalculateRiskScore(profile, operation);
+
+//            // If risk score exceeds threshold, revoke the key and trigger a full lockdown.
+//            if (riskScore > 0.8)
+//            {
+//                _keyManager.RevokeKey(user.PublicKey, $"Anomaly detected: {operation.Type}");
+//                _alertService.TriggerIncident(IncidentResponse.FullLockdown);
+//            }
+
+//            // Update the user behavior profile with the new operation.
+//            profile.Update(operation);
+//        }
+
+//        /// <summary>
+//        /// Calculates a simple risk score for the operation based on heuristics.
+//        /// </summary>
+//        private double CalculateRiskScore(UserBehaviorProfile profile, DatabaseOperation operation)
+//        {
+//            double score = 0.0;
+
+//            // Increase score for bulk delete operations.
+//            if (operation.Type == OperationType.BulkDelete)
+//                score += 0.4 * Math.Min(operation.RecordCount / 1000.0, 1.0);
+
+//            // Increase score if operation occurs outside normal business hours.
+//            if (operation.Time.Hour < 8 || operation.Time.Hour > 18)
+//                score += 0.3;
+
+//            // Increase score if the user's operations are unusually high.
+//            if (profile.AvgOperationsPerHour < 5 && operation.RecordCount > 50)
+//                score += 0.6;
+
+//            return score;
+//        }
+//    }
+
+
+//    #endregion
+
+//    #region MFA, Code Signing, and Audit Logging
+
+//    // Simplified MFA challenge service.
+//    public class MfaChallengeService
+//    {
+//        public bool ValidateHardwareToken(string token)
+//        {
+//            // Stub: Always returns true.
+//            return true;
+//        }
+
+//        public string GenerateMfaChallenge(string userId)
+//        {
+//            var challenge = new { Nonce = Guid.NewGuid().ToString(), Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(), UserId = userId };
+//            return Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(challenge)));
+//        }
+//    }
+
+//    // Code signing validator to ensure assemblies are signed.
+//    public static class CodeSigningValidator
+//    {
+//        public static void ValidateAssemblySignatures()
+//        {
+//            var assemblies = new[]
+//            {
+//                typeof(DbContext).Assembly,
+//                typeof(DigitalSignature).Assembly
+//            };
+
+//            foreach (var assembly in assemblies)
+//            {
+//                try
+//                {
+//                    X509Certificate2 cert = (X509Certificate2)X509Certificate.CreateFromSignedFile(assembly.Location);
+//                    if (!VerifyCertificate(cert))
+//                        throw new SecurityException($"Assembly {assembly.FullName} has an invalid signature.");
+//                }
+//                catch (Exception ex)
+//                {
+//                    throw new SecurityException($"Failed to validate assembly {assembly.FullName}: {ex.Message}");
+//                }
+//            }
+//        }
+
+//        private static bool VerifyCertificate(X509Certificate2 cert)
+//        {
+//            // Simplified: compare the thumbprint to an expected value.
+//            const string expectedThumbprint = "A389..."; // Replace with your organization's thumbprint.
+//            return cert.Thumbprint.Equals(expectedThumbprint, StringComparison.OrdinalIgnoreCase);
+//        }
+//    }
+
+//    // Logs audit events with a digital signature for non-repudiation.
+//    public sealed class SignedAuditLogger
+//    {
+//        private readonly DigitalSignature _keyManager;
+//        private readonly WriteOnce<AuditSignatureEntry> _auditStore;
+
+//        public SignedAuditLogger(DigitalSignature keyManager)
+//        {
+//            _keyManager = keyManager;
+//            _auditStore = new WriteOnce<AuditSignatureEntry>(@"\\secure-path\audit.writonce", FileMode.Create);
+//        }
+
+//        public void LogOperation(DatabaseOperation operation, string userId)
+//        {
+//            var envValues = new EnvironmentalKeyService().GetCurrentEnvironmentalValues(userId);
+//            var logEntry = new AuditSignatureEntry(operation.Type.ToString(), operation.RecordCount, DateTime.UtcNow, envValues);
+//            var signature = _keyManager.SignData(logEntry.GetHash(), "AUDIT_KEY", envValues);
+//            _auditStore.Write(logEntry with { Signature = signature });
+//        }
+//    }
+
+//    public record AuditSignatureEntry(string OperationType, int RecordCount, DateTime Timestamp, Dictionary<string, string> EnvironmentalValues)
+//    {
+//        public byte[] Signature { get; init; }
+
+//        public byte[] GetHash()
+//        {
+//            using (var sha = SHA512.Create())
+//            {
+//                string data = $"{OperationType}|{RecordCount}|{Timestamp:o}|{JsonConvert.SerializeObject(EnvironmentalValues)}";
+//                return sha.ComputeHash(Encoding.UTF8.GetBytes(data));
+//            }
+//        }
+//    }
+
+//    public class WriteOnce<T>
+//    {
+//        private readonly string _filePath;
+//        private readonly FileMode _fileMode;
+
+//        public WriteOnce(string filePath, FileMode fileMode)
+//        {
+//            _filePath = filePath;
+//            _fileMode = fileMode;
+//        }
+
+//        public void Write(T entry)
+//        {
+//            File.WriteAllText(_filePath, JsonConvert.SerializeObject(entry));
+//        }
+//    }
+
+//    #endregion
+
+//    #region Supporting Types
+
+//    public enum OperationType
+//    {
+//        Unknown,
+//        BulkDelete
+//    }
+
+//    public record DatabaseOperation(OperationType Type, int RecordCount, DateTimeOffset Time);
+
+//    public class User
+//    {
+//        public string Id { get; set; }
+//        public string PublicKey { get; set; }
+//    }
+
+//    public class UserBehaviorProfile
+//    {
+//        public double AvgOperationsPerHour { get; set; } = 0;
+//        public void Update(DatabaseOperation operation)
+//        {
+//            // Simplified update logic.
+//            AvgOperationsPerHour = (AvgOperationsPerHour + operation.RecordCount) / 2.0;
+//        }
+//    }
+
+//    public interface IAlertService
+//    {
+//        void TriggerIncident(IncidentResponse response);
+//    }
+
+//    public enum IncidentResponse
+//    {
+//        FullLockdown,
+//        AlertOnly
+//    }
+
+//    // Extension method stub to retrieve the current user from a DbContext.
+//    public static class DbContextExtensions
+//    {
+//        public static User GetCurrentUser(this DbContext context)
+//        {
+//            return new User { Id = "user123", PublicKey = "AUDIT_KEY" };
+//        }
+//    }
+
+//    #endregion
+
+//}

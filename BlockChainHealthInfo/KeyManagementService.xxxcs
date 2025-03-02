@@ -1,0 +1,1080 @@
+﻿using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Konscious.Security.Cryptography;
+using Ionic.Zip;
+using System.Text.Json;
+//using static BlockChainHealthInfo.KeyGenerator;
+
+namespace BlockChainHealthInfo
+{
+    
+    //public interface IDigitalSignatureService
+    //{
+    //    /// <summary>
+    //    /// Signs the given data by appending an expiry timestamp and then computing an ECDSA signature.
+    //    /// The returned package includes the ECDSA signature, an HMAC (computed with the master key),
+    //    /// and the index of the key used from the pool.
+    //    /// </summary>
+    //    byte[] SignData(byte[] data, TimeSpan expiry);
+    //    void UpdateKeyPool(List<KeyGenerator.KeyEntry> reIndexedPool);
+
+    //    void SaveKeyPool(byte[] masterKey);
+
+    //    /// <summary>
+    //    /// Verifies that the given <paramref name="signedData"/> is valid for the provided
+    //    /// <paramref name="dataWithExpiry"/> (which must be the original data with an 8‐byte expiry appended).
+    //    /// </summary>
+    //    bool VerifySignature(byte[] dataWithExpiry, byte[] signedData);
+    //}
+
+    //public class DigitalSignatureService : IDigitalSignatureService
+    //{
+    //    private readonly IKeyStorage _keyStorage;
+    //    private readonly ILogger<DigitalSignatureService> _logger;
+
+    //    // The key pool now holds complete key entries (from KeyGenerator).
+    //    private readonly List<KeyGenerator.KeyEntry> _keyPool = new();
+    //    // A lock to ensure thread-safe access to the key pool.
+    //    private readonly object _poolLock = new object();
+
+    //    public DigitalSignatureService(IKeyStorage keyStorage, ILogger<DigitalSignatureService> logger)
+    //    {
+    //        _keyStorage = keyStorage;
+    //        _logger = logger;
+    //        InitializeKeyPool();
+    //    }
+
+    //    /// <summary>
+    //    /// Initializes the key pool by retrieving the key entries from the KeyGenerator.
+    //    /// </summary>
+    //    private void InitializeKeyPool()
+    //    {
+    //        var pool = KeyGenerator.GetKeyPool(_keyStorage.CurrentKey);
+    //        lock (_poolLock)
+    //        {
+    //            _keyPool.Clear();
+    //            _keyPool.AddRange(pool);
+    //        }
+    //        _logger.LogInformation($"Key pool initialized with {_keyPool.Count} entries.");
+    //    }
+
+    //    public void UpdateKeyPool(List<KeyGenerator.KeyEntry> reIndexedPool)
+    //    {
+    //        lock (_poolLock)
+    //        {
+    //            _keyPool.Clear();
+    //            _keyPool.AddRange(reIndexedPool);
+    //        }
+    //        _logger.LogInformation($"Key pool updated with {_keyPool.Count} entries.");
+    //    }
+
+    //    public void SaveKeyPool(byte[] masterKey)
+    //    {
+    //        var pool = KeyGenerator.GetKeyPool(masterKey);
+    //        lock (_poolLock)
+    //        {
+    //            _keyPool.Clear();
+    //            _keyPool.AddRange(pool);
+    //        }
+    //        _logger.LogInformation($"Key pool updated with {_keyPool.Count} entries.");
+    //    }
+
+
+
+    //    /// <summary>
+    //    /// Signs the given data by appending an expiry timestamp and signing it with a rotated ECDSA key.
+    //    /// An HMAC (using the master key) is computed over the data-with-expiry.
+    //    /// The resulting package contains:
+    //    ///   [4 bytes: ECDSA signature length] [ECDSA signature bytes]
+    //    ///   [4 bytes: HMAC signature length]  [HMAC signature bytes]
+    //    ///   [4 bytes: key index used]
+    //    /// </summary>
+    //    public byte[] SignData(byte[] data, TimeSpan expiry)
+    //    {
+    //        // Append an expiry timestamp (8 bytes, little-endian) to the original data.
+    //        DateTime effectiveExpiry = DateTime.UtcNow.Add(expiry);
+    //        long expiryTicks = effectiveExpiry.Ticks;
+    //        byte[] expiryBytes = BitConverter.GetBytes(expiryTicks);
+    //        byte[] dataWithExpiry = data.Concat(expiryBytes).ToArray();
+
+    //        // Choose a key index using the new key selection algorithm.
+    //        int keyIndex;
+    //        KeyGenerator.KeyEntry keyEntry;
+    //        lock (_poolLock)
+    //        {
+    //            keyIndex = KeySelection(DateTime.UtcNow);
+    //            if (keyIndex < 0 || keyIndex >= _keyPool.Count)
+    //            {
+    //                _logger.LogError($"Key index {keyIndex} is out of bounds.");
+    //                throw new Exception("Key index out of bounds.");
+    //            }
+    //            keyEntry = _keyPool[keyIndex];
+    //        }
+
+    //        // Convert the stored Base64 key into a byte array.
+    //        byte[] privateKey = Convert.FromBase64String(keyEntry.PrivateKey);
+
+    //        // Sign the data (with expiry appended) using ECDSA (nistP521).
+    //        byte[] ecdsaSignature;
+    //        using (var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP521))
+    //        {
+    //            ecdsa.ImportECPrivateKey(privateKey, out _);
+    //            ecdsaSignature = ecdsa.SignData(dataWithExpiry, HashAlgorithmName.SHA512);
+    //        }
+
+    //        // Compute an HMAC over the same data-with-expiry using the master key.
+    //        byte[] masterKey = _keyStorage.CurrentKey;
+    //        byte[] hmacSignature;
+    //        using (var hmac = new HMACSHA256(masterKey))
+    //        {
+    //            hmacSignature = hmac.ComputeHash(dataWithExpiry);
+    //        }
+
+    //        // Pack the signatures and key index into a single byte array.
+    //        using (var ms = new MemoryStream())
+    //        using (var bw = new BinaryWriter(ms))
+    //        {
+    //            bw.Write(ecdsaSignature.Length);
+    //            bw.Write(ecdsaSignature);
+    //            bw.Write(hmacSignature.Length);
+    //            bw.Write(hmacSignature);
+    //            bw.Write(keyIndex);
+    //            return ms.ToArray();
+    //        }
+    //    }
+
+    //    /// <summary>
+    //    /// Verifies the provided signature package against the given data-with-expiry.
+    //    /// It first checks that the data has not expired, then verifies the HMAC,
+    //    /// and finally uses the key (identified by the index) to verify the ECDSA signature.
+    //    /// </summary>
+    //    public bool VerifySignature(byte[] dataWithExpiry, byte[] signedData)
+    //    {
+    //        // Ensure the data includes an expiry timestamp.
+    //        if (dataWithExpiry.Length < sizeof(long))
+    //        {
+    //            _logger.LogWarning("Data is too short to contain an expiry timestamp.");
+    //            return false;
+    //        }
+
+    //        // Extract the expiry timestamp from the end of dataWithExpiry.
+    //        long expiryTicks = BitConverter.ToInt64(dataWithExpiry, dataWithExpiry.Length - sizeof(long));
+    //        DateTime dataExpiry = new DateTime(expiryTicks, DateTimeKind.Utc);
+    //        if (dataExpiry < DateTime.UtcNow)
+    //        {
+    //            _logger.LogWarning("Data signature expired.");
+    //            throw new SignatureExpiredException("Signature has expired.");
+    //        }
+
+    //        try
+    //        {
+    //            using (var ms = new MemoryStream(signedData))
+    //            using (var br = new BinaryReader(ms))
+    //            {
+    //                int ecdsaSigLen = br.ReadInt32();
+    //                byte[] ecdsaSignature = br.ReadBytes(ecdsaSigLen);
+    //                int hmacSigLen = br.ReadInt32();
+    //                byte[] hmacSignature = br.ReadBytes(hmacSigLen);
+    //                int keyIndex = br.ReadInt32();
+
+    //                KeyGenerator.KeyEntry keyEntry;
+    //                lock (_poolLock)
+    //                {
+    //                    if (keyIndex < 0 || keyIndex >= _keyPool.Count)
+    //                    {
+    //                        _logger.LogWarning("Invalid key index in signature package.");
+    //                        return false;
+    //                    }
+    //                    keyEntry = _keyPool[keyIndex];
+    //                }
+
+    //                // Check that the key used for signing has not expired.
+    //                DateTime keyExpiry = DateTime.Parse(keyEntry.ExpiryTimestamp);
+    //                if (keyExpiry < DateTime.UtcNow)
+    //                {
+    //                    _logger.LogWarning($"Key at index {keyIndex} expired at {keyExpiry}.");
+    //                    return false;
+    //                }
+
+    //                // Recompute the HMAC over dataWithExpiry.
+    //                byte[] masterKey = _keyStorage.CurrentKey;
+    //                byte[] computedHmac;
+    //                using (var hmac = new HMACSHA256(masterKey))
+    //                {
+    //                    computedHmac = hmac.ComputeHash(dataWithExpiry);
+    //                }
+    //                if (!computedHmac.SequenceEqual(hmacSignature))
+    //                {
+    //                    _logger.LogWarning("HMAC verification failed.");
+    //                    return false;
+    //                }
+
+    //                // Verify the ECDSA signature.
+    //                byte[] privateKey = Convert.FromBase64String(keyEntry.PrivateKey);
+    //                using (var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP521))
+    //                {
+    //                    ecdsa.ImportECPrivateKey(privateKey, out _);
+    //                    bool isValid = ecdsa.VerifyData(dataWithExpiry, ecdsaSignature, HashAlgorithmName.SHA512);
+    //                    if (!isValid)
+    //                    {
+    //                        _logger.LogWarning($"ECDSA signature verification failed for key at index {keyIndex}.");
+    //                    }
+    //                    return isValid;
+    //                }
+    //            }
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            _logger.LogError(ex, "Error parsing signature package.");
+    //            return false;
+    //        }
+    //    }
+
+    //    /// <summary>
+    //    /// Determines which key from the pool should be used for signing at the given moment.
+    //    /// This selection algorithm computes a composite string from the current hour, day of month,
+    //    /// and day of week, hashes it, and uses the result as a starting index. It then scans forward
+    //    /// (wrapping around) until it finds a key whose expiry is still valid.
+    //    /// </summary>
+    //    private int KeySelection(DateTime now)
+    //    {
+    //        string composite = $"{now.Hour}-{now.Day}-{(int)now.DayOfWeek}";
+    //        using (var sha256 = SHA256.Create())
+    //        {
+    //            byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(composite));
+    //            int startIndex = Math.Abs(BitConverter.ToInt32(hashBytes, 0)) % _keyPool.Count;
+    //            int index = startIndex;
+    //            do
+    //            {
+    //                DateTime keyExpiry = DateTime.Parse(_keyPool[index].ExpiryTimestamp);
+    //                if (keyExpiry > now)
+    //                {
+    //                    return index;
+    //                }
+    //                index = (index + 1) % _keyPool.Count;
+    //            }
+    //            while (index != startIndex);
+    //        }
+    //        throw new Exception("No valid signing key found during selection.");
+    //    }
+    //}
+
+    ///// <summary>
+    ///// Exception thrown when a signature is determined to have expired.
+    ///// </summary>
+    //public class SignatureExpiredException : Exception
+    //{
+    //    public SignatureExpiredException(string message) : base(message) { }
+    //}
+
+
+
+
+
+
+    //public class SignedEntity
+    //{
+    //    public int Id { get; set; }
+    //    public string Data { get; set; }
+    //    public byte[] Signature { get; set; }
+    //}
+
+    //public class SignatureValidationInterceptor : SaveChangesInterceptor
+    //{
+    //    private readonly IDigitalSignatureService _signatureService;
+    //    private readonly ILogger<SignatureValidationInterceptor> _logger;
+
+    //    public SignatureValidationInterceptor(
+    //        IDigitalSignatureService signatureService,
+    //        ILogger<SignatureValidationInterceptor> logger)
+    //    {
+    //        _signatureService = signatureService;
+    //        _logger = logger;
+    //    }
+
+    //    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+    //        DbContextEventData eventData,
+    //        InterceptionResult<int> result,
+    //        CancellationToken cancellationToken = default)
+    //    {
+    //        var context = eventData.Context;
+    //        if (context == null)
+    //        {
+    //            return base.SavingChangesAsync(eventData, result, cancellationToken);
+    //        }
+
+    //        foreach (var entry in context.ChangeTracker.Entries())
+    //        {
+    //            if (entry.Entity is IAuditableEntity signedEntity)
+    //            {
+    //                try
+    //                {
+    //                    byte[] dataBytes = Encoding.UTF8.GetBytes(signedEntity.GenerateSignature());
+    //                    byte[] signatureBytes = Convert.FromBase64String(signedEntity.Signature);
+
+    //                    if (!_signatureService.VerifySignature(dataBytes, signatureBytes))
+    //                    {
+    //                        _logger.LogError("Signature validation failed for entity {EntityId}", signedEntity.Id);
+    //                        throw new InvalidOperationException("Signature validation failed. Data integrity compromised.");
+    //                    }
+    //                }
+    //                catch (Exception ex)
+    //                {
+    //                    _logger.LogError(ex, "Error validating signature for entity {EntityId}", signedEntity.Id);
+    //                    throw;
+    //                }
+    //            }
+    //        }
+
+    //        return base.SavingChangesAsync(eventData, result, cancellationToken);
+    //    }
+    //}
+
+
+
+
+
+
+    //public class KeyRotationService : BackgroundService
+    //{
+    //    private readonly IKeyStorage _keyStorage;
+    //    private readonly IDigitalSignatureService _digitalSignature;
+    //    private readonly ILogger<KeyRotationService> _logger;
+
+    //    // Daily rotation interval for master key and signature keys.
+    //    private readonly TimeSpan _rotationInterval = TimeSpan.FromHours(24);
+
+    //    // One-hour overlap window to allow in-flight operations to complete.
+    //    private readonly TimeSpan _overlapWindow = TimeSpan.FromHours(1);
+
+    //    public KeyRotationService(IKeyStorage keyStorage, ILogger<KeyRotationService> logger)
+    //    {
+    //        _keyStorage = keyStorage;
+    //        _logger = logger;
+    //    }
+
+    //    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    //    {
+    //        while (!stoppingToken.IsCancellationRequested)
+    //        {
+    //            await Task.Delay(_rotationInterval, stoppingToken);  // Wait 24 hours before rotating keys
+    //            RotateKeys();
+    //        }
+    //    }
+
+    //    private void RotateKeys()
+    //    {
+    //        try
+    //        {
+    //            _logger.LogInformation("Starting key rotation...");
+
+    //            // Rotate signature keys by shifting their indices.
+    //            ShiftSignatureKeys();
+
+    //            // Regenerate the master key and signature keys every 24 hours.
+    //            RegenerateKeys();
+
+    //            // Start the overlap window task to remove old keys after the 1-hour window.
+    //            Task.Delay(_overlapWindow).ContinueWith(_ =>
+    //            {
+    //                _keyStorage.RemoveOldKeys();
+    //                _logger.LogInformation("Old keys removed after overlap window.");
+    //            });
+
+    //            _logger.LogInformation("Key rotation completed successfully.");
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            _logger.LogError($"Key rotation failed: {ex.Message}");
+    //        }
+    //    }
+
+    //    private void ShiftSignatureKeys()
+    //    {
+    //        _logger.LogInformation("Shifting signature keys...");
+
+    //        // Retrieve the current key pool
+    //        var keyPool = KeyGenerator.GetKeyPool(_keyStorage.CurrentKey);
+
+    //        // Shift the indices of signature keys (e.g., from index 1 to 70)
+    //        List<KeyGenerator.KeyEntry> shiftedKeyPool = keyPool.Skip(1).Concat(keyPool.Take(1)).ToList();  // Example shift
+
+    //        // Update the key storage with the rotated keys
+    //        _digitalSignature.UpdateKeyPool(shiftedKeyPool);
+
+    //        _logger.LogInformation("Signature keys shifted successfully.");
+    //    }
+
+    //    private void RegenerateKeys()
+    //    {
+    //        _logger.LogInformation("Regenerating master and signature keys...");
+
+    //        // Generate a new master key
+    //        //byte[] newMasterKey = SecureKeyStorage.GenerateMasterKey();
+    //        _keyStorage.UpdateMasterKey();
+
+    //        // Regenerate the signature key pool using the new master key
+    //        var newKeyPool = KeyGenerator.GetKeyPool(_keyStorage.CurrentKey);
+    //        _digitalSignature.UpdateKeyPool(newKeyPool);
+
+    //        _logger.LogInformation("Master and signature keys regenerated successfully.");
+    //    }
+    //}
+
+    //public class KeyVersioned
+    //{
+    //    public byte[] Key { get; }
+    //    public DateTime Timestamp { get; }
+    //    public object Version { get; internal set; }
+
+    //    public KeyVersioned(byte[] key, DateTime timestamp)
+    //    {
+    //        Key = key;
+    //        Timestamp = timestamp;
+    //    }
+    //}
+
+
+
+    //public class AuditLogger
+    //{
+    //    private static readonly string AuditFilePath = "audit.log";
+    //    private static readonly object FileLock = new();
+    //    private MerkleTree _merkleTree = new();
+
+    //    public void LogEvent(string message)
+    //    {
+    //        lock (FileLock)
+    //        {
+    //            string timestamp = DateTime.UtcNow.ToString("o");
+    //            string logEntry = $"{timestamp} | {message}";
+    //            _merkleTree.Add(logEntry);
+    //            string merkleRoot = _merkleTree.RootHash;
+    //            File.AppendAllText(AuditFilePath, $"{logEntry} | {merkleRoot}{Environment.NewLine}");
+    //        }
+    //    }
+
+    //    public bool ValidateAuditLog()
+    //    {
+    //        var logEntries = File.ReadAllLines(AuditFilePath);
+    //        return _merkleTree.Validate(logEntries);
+    //    }
+    //}
+
+    //public class MerkleTree
+    //{
+    //    private List<string> _leafHashes = new();
+    //    private List<List<string>> _treeLevels = new();
+
+    //    public string RootHash => _treeLevels.Count > 0 ? _treeLevels.Last()[0] : string.Empty;
+
+    //    public void Add(string data)
+    //    {
+    //        string hash = ComputeHash(data);
+    //        _leafHashes.Add(hash);
+    //        RebuildTree();
+    //    }
+
+    //    public bool Validate(IEnumerable<string> entries)
+    //    {
+    //        string computedRoot = ComputeRootHash(entries);
+    //        return computedRoot == RootHash;
+    //    }
+
+    //    private void RebuildTree()
+    //    {
+    //        _treeLevels = new List<List<string>> { _leafHashes };
+    //        while (_treeLevels.Last().Count > 1)
+    //        {
+    //            var currentLevel = _treeLevels.Last();
+    //            var nextLevel = new List<string>();
+    //            for (int i = 0; i < currentLevel.Count; i += 2)
+    //            {
+    //                string left = currentLevel[i];
+    //                string right = (i + 1 < currentLevel.Count) ? currentLevel[i + 1] : left;
+    //                string parentHash = ComputeHash(left + right);
+    //                nextLevel.Add(parentHash);
+    //            }
+    //            _treeLevels.Add(nextLevel);
+    //        }
+    //    }
+
+    //    private string ComputeRootHash(IEnumerable<string> entries)
+    //    {
+    //        if (!entries.Any())
+    //            return string.Empty;
+
+    //        var leafHashes = entries.Select(ComputeHash).ToList();
+    //        var levels = new List<List<string>> { leafHashes };
+    //        while (levels.Last().Count > 1)
+    //        {
+    //            var currentLevel = levels.Last();
+    //            var nextLevel = new List<string>();
+    //            for (int i = 0; i < currentLevel.Count; i += 2)
+    //            {
+    //                string left = currentLevel[i];
+    //                string right = (i + 1 < currentLevel.Count) ? currentLevel[i + 1] : left;
+    //                string parentHash = ComputeHash(left + right);
+    //                nextLevel.Add(parentHash);
+    //            }
+    //            levels.Add(nextLevel);
+    //        }
+    //        return levels.Last().FirstOrDefault() ?? string.Empty;
+    //    }
+
+    //    private string ComputeHash(string input)
+    //    {
+    //        using var sha256 = SHA256.Create();
+    //        byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(input));
+    //        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+    //    }
+    //}
+
+    //public class KeyGenerator
+    //{
+    //    public const int KeyPoolSize = 50000;
+
+    //    // File paths used by the key generator.
+    //    private static readonly string ZipFilePath = "secure_keys.zip";
+    //    private static readonly string KeyFilePath = "secure_keys.json";
+    //    private static readonly string BackupFilePath = "secure_keys_backup.json";
+    //    private static readonly string ExtractedKeyPath = "extracted_keys.json";
+
+    //    private static readonly string _secretKey;
+
+    //    static KeyGenerator()
+    //    {
+    //        _secretKey = Environment.GetEnvironmentVariable("smart-contract");
+    //    }
+
+    //    /// <summary>
+    //    /// Retrieves the key pool as a list of key entries.
+    //    /// This method checks if the secure ZIP file exists (or falls back to the backup),
+    //    /// extracts the secure_keys.json into an object using Ionic.Zip (with the environment secret),
+    //    /// decrypts the contained key data with the provided masterKey, and then uses the decrypted entropy
+    //    /// (combined with the master key and index) to generate a pool of ECDSA signing keys.
+    //    /// </summary>
+    //    public static List<KeyEntry> GetKeyPool(byte[] masterKey)
+    //    {
+    //        // Check if the ZIP file exists; if not, attempt using the backup.
+    //        if (!File.Exists(ZipFilePath))
+    //        {
+    //            Console.WriteLine("Secure keys ZIP not found, attempting to use backup...");
+    //            if (!File.Exists(BackupFilePath))
+    //                throw new FileNotFoundException("Both secure_keys.zip and backup are missing.");
+    //            Console.WriteLine("Recreating ZIP from backup...");
+    //            RecreateZipFromBackup();
+    //        }
+
+    //        // Extract secure_keys.json from the available ZIP into an object.
+    //        var secureData = ExtractSecureKeys();
+
+    //        // The secure data should contain a "Nonce" and "Data" (the encrypted keys).
+    //        if (!secureData.ContainsKey("Nonce") || !secureData.ContainsKey("Data"))
+    //            throw new Exception("Extracted secure data is missing required fields.");
+
+    //        byte[] nonce = Convert.FromBase64String(secureData["Nonce"]);
+    //        byte[] encryptedKeys = Convert.FromBase64String(secureData["Data"]);
+
+    //        // Decrypt the stored keys using the provided master key.
+    //        byte[] decryptedKeys = MemoryProtectionService.Decrypt(encryptedKeys, masterKey, nonce);
+    //        // Optionally, save the decrypted bytes for record:
+    //        File.WriteAllBytes(ExtractedKeyPath, decryptedKeys);
+    //        Console.WriteLine("Successfully extracted and decrypted keys.");
+
+    //        // Generate the key pool using the decrypted entropy.
+    //        var keyEntriesList = new List<KeyEntry>();
+    //        for (int i = 0; i < KeyPoolSize; i++)
+    //        {
+    //            // Combine the decrypted keys, master key, and the current index to produce unique entropy.
+    //            byte[] combinedEntropy = CombineEntropy(decryptedKeys, masterKey, i);
+    //            var (privateKey, publicKey) = GenerateECDSAKey(combinedEntropy);
+    //            keyEntriesList.Add(new KeyEntry
+    //            {
+    //                Index = i,
+    //                PrivateKey = Convert.ToBase64String(privateKey),
+    //                PublicKey = Convert.ToBase64String(publicKey),
+    //                ExpiryTimestamp = DateTime.UtcNow.AddMonths(6).ToString("o")
+    //            });
+    //        }
+    //        // Return the full pool (list of key entries) without writing to disk.
+    //        return keyEntriesList;
+    //    }
+
+    //    /// <summary>
+    //    /// Extracts the secure_keys.json file from the ZIP archive into a dictionary.
+    //    /// This method reads the entry into memory (instead of writing it to disk) and returns the deserialized object.
+    //    /// </summary>
+    //    private static Dictionary<string, string> ExtractSecureKeys()
+    //    {
+    //        string envSecret = Environment.GetEnvironmentVariable(_secretKey)
+    //                           ?? throw new Exception("Environment secret key missing.");
+    //        // Use the primary ZIP if it exists; otherwise, fallback to the backup.
+    //        string sourceZip = File.Exists(ZipFilePath) ? ZipFilePath : BackupFilePath;
+    //        Console.WriteLine($"Extracting secure keys from {sourceZip} using Ionic.Zip...");
+
+    //        using (ZipFile zip = ZipFile.Read(sourceZip))
+    //        {
+    //            // Provide the password used during compression.
+    //            zip.Password = envSecret;
+    //            foreach (ZipEntry entry in zip)
+    //            {
+    //                if (entry.FileName.Equals("secure_keys.json", StringComparison.OrdinalIgnoreCase))
+    //                {
+    //                    using (var ms = new MemoryStream())
+    //                    {
+    //                        // Extract the entry into a memory stream.
+    //                        entry.Extract(ms);
+    //                        ms.Position = 0;
+    //                        using (var sr = new StreamReader(ms))
+    //                        {
+    //                            string jsonContent = sr.ReadToEnd();
+    //                            // Deserialize the JSON content into a dictionary.
+    //                            var secureData = JsonSerializer.Deserialize<Dictionary<string, string>>(jsonContent);
+    //                            return secureData;
+    //                        }
+    //                    }
+    //                }
+    //            }
+    //        }
+    //        throw new FileNotFoundException("secure_keys.json not found in the ZIP archive.");
+    //    }
+
+    //    /// <summary>
+    //    /// Recreates the secure ZIP file from the backup file.
+    //    /// The backup is compressed with the same secret key as used originally.
+    //    /// </summary>
+    //    private static void RecreateZipFromBackup()
+    //    {
+    //        string envSecret = Environment.GetEnvironmentVariable("SECRET_KEY")
+    //                           ?? throw new Exception("Environment secret key missing.");
+    //        Console.WriteLine("Recreating ZIP from backup...");
+    //        using (var zip = new ZipFile())
+    //        {
+    //            zip.Password = envSecret;
+    //            zip.AddFile(BackupFilePath, "");
+    //            zip.Save(ZipFilePath);
+    //        }
+    //    }
+
+    //    /// <summary>
+    //    /// Generates an ECDSA key pair using the nistP521 curve.
+    //    /// The provided entropy is XOR‑mixed into the exported private key bytes.
+    //    /// </summary>
+    //    public static (byte[] PrivateKey, byte[] PublicKey) GenerateECDSAKey(byte[] entropy)
+    //    {
+    //        using (var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP521))
+    //        {
+    //            byte[] privateKey = ecdsa.ExportECPrivateKey();
+    //            byte[] publicKey = ecdsa.ExportSubjectPublicKeyInfo();
+
+    //            // Mix in the provided entropy into the private key.
+    //            for (int i = 0; i < privateKey.Length; i++)
+    //            {
+    //                privateKey[i] ^= entropy[i % entropy.Length];
+    //            }
+    //            return (privateKey, publicKey);
+    //        }
+    //    }
+
+    //    /// <summary>
+    //    /// Combines the decrypted keys with the master key and an index value
+    //    /// to produce unique entropy for each key in the pool.
+    //    /// </summary>
+    //    private static byte[] CombineEntropy(byte[] decryptedKeys, byte[] masterKey, int index)
+    //    {
+    //        byte[] indexBytes = BitConverter.GetBytes(index);
+    //        byte[] combined = new byte[decryptedKeys.Length];
+    //        for (int i = 0; i < decryptedKeys.Length; i++)
+    //        {
+    //            combined[i] = (byte)(decryptedKeys[i] ^ masterKey[i % masterKey.Length] ^ indexBytes[i % indexBytes.Length]);
+    //        }
+    //        return combined;
+    //    }
+
+    //    /// <summary>
+    //    /// Represents an entry in the key pool.
+    //    /// </summary>
+    //    public class KeyEntry
+    //    {
+    //        public int Index { get; set; }
+    //        public string PrivateKey { get; set; }
+    //        public string PublicKey { get; set; }
+    //        public string ExpiryTimestamp { get; set; }
+    //    }
+    //}
+
+    //public interface IKeyStorage
+    //{
+    //    byte[] CurrentKey { get; }
+    //    void SaveKey(KeyVersioned key);
+    //    byte[] LoadKey();
+    //    void RemoveOldKeys();
+
+    //    //void SaveKey(KeyVersioned key);
+    //    void SaveKeyPool(List<KeyEntry> keyPool); // Add the SaveKeyPool method
+    //    void UpdateMasterKey();  // Add the UpdateMasterKey method
+
+    //}
+
+    //public class SecureKeyStorage : IKeyStorage
+    //{
+    //    private static readonly string PassphraseFile = "passphrase.txt";
+    //    private static readonly string PlainKeyFile = "plainKey.json";
+    //    //private static readonly string KeyFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "secure_keys.zip");
+    //    private static readonly string BackupFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "secure_keys_backup.zip");
+    //    private static readonly string ZipFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "secure_keys.zip");
+
+    //    private byte[] _masterKey;
+    //    private readonly List<KeyVersioned> _keyVersions = new();
+
+    //    public byte[] CurrentKey => _masterKey;
+
+    //    private readonly string _secretKey;
+
+    //    public SecureKeyStorage(string secretKey)
+    //    {
+    //        _masterKey = GenerateMasterKey();
+
+    //        _secretKey = secretKey;
+    //    }
+
+    //    private byte[] GenerateMasterKey()
+    //    {
+    //        if (!File.Exists(PassphraseFile))
+    //            throw new FileNotFoundException("Passphrase file not found.");
+
+    //        // Read the passphrase
+    //        string passphrase = File.ReadAllText(PassphraseFile).Trim();
+
+    //        // Rearrange the passphrase
+    //        passphrase = RearrangePassphrase(passphrase);
+
+    //        // Get the environment secret key
+    //        string envSecret = Environment.GetEnvironmentVariable(_secretKey) ?? throw new Exception("Environment secret key missing.");
+
+    //        // Include timestamp in salt
+    //        string timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+    //        byte[] salt = Encoding.UTF8.GetBytes(envSecret + timestamp);
+    //        byte[] passBytes = Encoding.UTF8.GetBytes(passphrase);
+
+    //        // Use Argon2 to derive a strong master key
+    //        using var argon2 = new Argon2id(passBytes)
+    //        {
+    //            Salt = salt,
+    //            DegreeOfParallelism = 4,
+    //            MemorySize = 65536,
+    //            Iterations = 3
+    //        };
+    //        return argon2.GetBytes(32);
+    //    }
+
+    //    public void UpdateMasterKey()
+    //    {
+    //        _masterKey = GenerateMasterKey(); // Update the instance's _masterKey field
+    //        Console.WriteLine("Master key updated successfully.");
+    //    }
+
+    //    public static string RearrangePassphrase(string passphrase)
+    //    {
+    //        // Split the passphrase into individual words
+    //        string[] words = passphrase.Split(' ');
+
+    //        // Shuffle the order of the words
+    //        Random rng = new Random();
+    //        words = words.OrderBy(x => rng.Next()).ToArray();
+
+    //        // Rearrange the characters within each word
+    //        for (int i = 0; i < words.Length; i++)
+    //        {
+    //            char[] charArray = words[i].ToCharArray();
+    //            charArray = charArray.OrderBy(x => rng.Next()).ToArray();
+    //            words[i] = new string(charArray);
+    //        }
+
+    //        // Rejoin the words into the final passphrase
+    //        return string.Join(" ", words);
+    //    }
+
+    //    private List<byte[]> _plainKeys;
+
+    //    public void GeneratePlainKeys()
+    //    {
+    //        _plainKeys = new List<byte[]>();
+    //        for (int i = 0; i < 50; i++)
+    //        {
+    //            byte[] key = new byte[32];
+    //            RandomNumberGenerator.Fill(key);
+    //            _plainKeys.Add(key);
+    //        }
+    //    }
+
+
+    //    public void SaveKey(KeyVersioned key)
+    //    {
+    //        // Encrypt each plain key
+    //        List<(byte[] nonce, byte[] encryptedData)> encryptedKeys = new();
+    //        foreach (byte[] plainKey in _plainKeys)
+    //        {
+    //            byte[] keyBytes = Encoding.UTF8.GetBytes(Convert.ToBase64String(plainKey));
+
+    //            // Generate a nonce for encryption
+    //            byte[] nonce = new byte[12];
+    //            RandomNumberGenerator.Fill(nonce);
+
+    //            // Encrypt keys using ChaCha20-Poly1305
+    //            byte[] encryptedData = MemoryProtectionService.Encrypt(keyBytes, _masterKey, nonce);
+    //            encryptedKeys.Add((nonce, encryptedData));
+    //        }
+
+    //        // Save the encrypted keys to the key file
+    //        var secureData = encryptedKeys.Select(t => new
+    //        {
+    //            Version = key.Version,
+    //            Timestamp = key.Timestamp,
+    //            Nonce = Convert.ToBase64String(t.nonce),
+    //            Data = Convert.ToBase64String(t.encryptedData)
+    //        }).ToList();
+
+    //        string secureJson = JsonSerializer.Serialize(secureData);
+
+    //        // Compress and Protect secure_keys.json using ZIP
+    //        CompressSecureKeys(secureJson);
+
+    //        // Copy the compressed ZIP file to the other locations
+    //        //File.Copy(ZipFilePath, KeyFilePath, true);
+    //        File.Copy(ZipFilePath, BackupFilePath, true);
+    //    }
+
+    //    private void CompressSecureKeys(string secureData)
+    //    {
+
+    //        string envSecret = Environment.GetEnvironmentVariable("SECRET_KEY") ?? throw new Exception("Environment secret key missing.");
+
+    //        using var zip = new Ionic.Zip.ZipFile();
+    //        zip.Password = envSecret;
+    //        zip.AddEntry("secure_keys.json", secureData);
+    //        zip.Save(ZipFilePath);
+    //    }
+
+
+    //    public byte[] LoadKey()
+    //    {
+    //        if (!File.Exists(ZipFilePath))
+    //            throw new FileNotFoundException("Secure key file not found.");
+
+    //        // Read encrypted key file
+    //        var secureData = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(ZipFilePath));
+    //        byte[] nonce = Convert.FromBase64String(secureData["Nonce"]);
+    //        byte[] encryptedKeys = Convert.FromBase64String(secureData["Data"]);
+
+    //        // Decrypt keys
+    //        return MemoryProtectionService.Decrypt(encryptedKeys, _masterKey, nonce);
+    //    }
+
+    //    public void RemoveOldKeys()
+    //    {
+    //        var cutoff = DateTime.UtcNow - TimeSpan.FromHours(24);
+    //        _keyVersions.RemoveAll(k => k.Timestamp < cutoff);
+    //    }
+
+        
+
+    //    void IKeyStorage.SaveKeyPool(List<KeyEntry> keyPool)
+    //    {
+    //        throw new NotImplementedException();
+    //    }
+    //}
+
+
+
+
+
+
+
+
+
+    //public static class MemoryProtectionService
+    //{
+    //    public static byte[] Encrypt(byte[] data, byte[] key, byte[] nonce)
+    //    {
+    //        using var chacha = new ChaCha20Poly1305(key);
+    //        byte[] ciphertext = new byte[data.Length];
+    //        byte[] tag = new byte[16];
+    //        chacha.Encrypt(nonce, data, ciphertext, tag);
+
+    //        // Clear sensitive data
+    //        CryptographicOperations.ZeroMemory(data);
+    //        return ciphertext.Concat(tag).ToArray();
+    //    }
+
+    //    public static byte[] Decrypt(byte[] encryptedData, byte[] key, byte[] nonce)
+    //    {
+    //        using var chacha = new ChaCha20Poly1305(key);
+    //        byte[] ciphertext = encryptedData.Take(encryptedData.Length - 16).ToArray();
+    //        byte[] tag = encryptedData.Skip(encryptedData.Length - 16).ToArray();
+    //        byte[] plaintext = new byte[ciphertext.Length];
+    //        chacha.Decrypt(nonce, ciphertext, tag, plaintext);
+
+    //        // Clear sensitive data
+    //        CryptographicOperations.ZeroMemory(ciphertext);
+    //        CryptographicOperations.ZeroMemory(tag);
+    //        return plaintext;
+    //    }
+    //}
+
+
+    
+
+
+    //public class SignatureCleanupService : BackgroundService
+    //{
+    //    private readonly IDigitalSignatureService _digitalSignatureService;
+    //    private readonly ILogger<SignatureCleanupService> _logger;
+    //    private readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(30); // Run every 30 minutes
+    //    private readonly List<SignedData> _signatures = new(); // In-memory storage for signatures
+
+    //    public SignatureCleanupService(IDigitalSignatureService digitalSignatureService, ILogger<SignatureCleanupService> logger)
+    //    {
+    //        _digitalSignatureService = digitalSignatureService;
+    //        _logger = logger;
+    //    }
+
+    //    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    //    {
+    //        while (!stoppingToken.IsCancellationRequested)
+    //        {
+    //            try
+    //            {
+    //                _logger.LogInformation("Running signature cleanup...");
+    //                CleanupExpiredSignatures();
+    //                _logger.LogInformation("Signature cleanup completed.");
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                _logger.LogError($"Signature cleanup failed: {ex.Message}");
+    //            }
+    //            await Task.Delay(_cleanupInterval, stoppingToken);
+    //        }
+    //    }
+
+    //    private void CleanupExpiredSignatures()
+    //    {
+    //        var expiredSignatures = _signatures.Where(s => IsSignatureExpired(s.Signature)).ToList();
+
+    //        foreach (var expiredSignature in expiredSignatures)
+    //        {
+    //            try
+    //            {
+    //                byte[] newSignature = _digitalSignatureService.SignData(expiredSignature.Data, TimeSpan.FromHours(1));
+    //                expiredSignature.Signature = newSignature;
+    //                expiredSignature.ExpiryTime = DateTime.UtcNow.AddHours(1);
+    //                _logger.LogInformation($"Replaced expired signature for data: {Encoding.UTF8.GetString(expiredSignature.Data)}");
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                _logger.LogError($"Failed to replace expired signature: {ex.Message}");
+    //            }
+    //        }
+
+    //        _signatures.RemoveAll(s => IsSignatureExpired(s.Signature) && s.ExpiryTime < DateTime.UtcNow);
+    //        _logger.LogInformation($"Removed {expiredSignatures.Count} expired signatures.");
+    //    }
+
+    //    private bool IsSignatureExpired(byte[] signature)
+    //    {
+    //        try
+    //        {
+    //            int expirySize = sizeof(long);
+    //            byte[] expiryBytes = signature.Skip(signature.Length - expirySize).Take(expirySize).ToArray();
+    //            long expiryTicks = BitConverter.ToInt64(expiryBytes, 0);
+    //            DateTime expiryTime = new DateTime(expiryTicks, DateTimeKind.Utc);
+    //            return DateTime.UtcNow > expiryTime;
+    //        }
+    //        catch
+    //        {
+    //            return true;
+    //        }
+    //    }
+
+    //    private class SignedData
+    //    {
+    //        public byte[] Data { get; set; }
+    //        public byte[] Signature { get; set; }
+    //        public DateTime ExpiryTime { get; set; }
+    //    }
+
+
+
+
+
+
+        //#region SecureMemory Container
+
+        ///// <summary>
+        ///// A simple secure memory container that holds sensitive data
+        ///// and clears it when disposed.
+        ///// </summary>
+        //public class SecureMemory : IDisposable
+        //{
+        //    public byte[] Data { get; private set; }
+
+        //    public SecureMemory(byte[] data)
+        //    {
+        //        Data = data;
+        //        // Optionally, pin memory here.
+        //    }
+
+        //    public void Dispose()
+        //    {
+        //        if (Data != null)
+        //        {
+        //            Array.Clear(Data, 0, Data.Length);
+        //            Data = null;
+        //        }
+        //    }
+        //}
+        //#endregion
+
+        //#region MemoryProtectionService
+
+        //public static class MemoryProtectionService
+        //{
+        //    // Encrypts data using ChaCha20-Poly1305.
+        //    public static byte[] Encrypt(byte[] plaintext, byte[] key, byte[] nonce)
+        //    {
+        //        using var cipher = new ChaCha20Poly1305(key);
+        //        byte[] ciphertext = new byte[plaintext.Length];
+        //        byte[] tag = new byte[16];
+        //        cipher.Encrypt(nonce, plaintext, ciphertext, tag);
+        //        // Concatenate ciphertext and tag.
+        //        return ciphertext.Concat(tag).ToArray();
+        //    }
+
+        //    // Decrypts data using ChaCha20-Poly1305.
+        //    public static byte[] Decrypt(byte[] encryptedData, byte[] key, byte[] nonce)
+        //    {
+        //        using var cipher = new ChaCha20Poly1305(key);
+        //        int tagLength = 16;
+        //        byte[] ciphertext = encryptedData.Take(encryptedData.Length - tagLength).ToArray();
+        //        byte[] tag = encryptedData.Skip(encryptedData.Length - tagLength).ToArray();
+        //        byte[] plaintext = new byte[ciphertext.Length];
+        //        cipher.Decrypt(nonce, ciphertext, tag, plaintext);
+        //        return plaintext;
+        //    }
+        //}
+        //#endregion
+
+       
+
+    }
+
