@@ -14,7 +14,6 @@ using System.ComponentModel.DataAnnotations.Schema;
 using static Hl7.Fhir.Model.Encounter;
 using static System.Net.Mime.MediaTypeNames;
 using System.Security.Cryptography;
-using BlockChainHealthInfo.DigitalSignatureManagement;
 
 namespace BlockChainHealthInfo
 {
@@ -79,23 +78,8 @@ namespace BlockChainHealthInfo
         // Navigation property
         public List<DbEncounter> DbEncounters { get; set; } = new List<DbEncounter>();
 
-        [Required]
-        [Column("RecordedDate")]
-        public DateTime RecordedDate { get; set; } = DateTime.Now;
-
-        // signed Record
-        public string Signature { get; set; }
-        // Add these properties
-        public DateTime SignatureExpiry { get; set; }
-        public byte[] SignedDataBlob { get; set; }
-        public string SnapshotVersion { get ; set ; }
-
-        public string GenerateSignature()
-        {
-            return $"{Id}|{RecordedDate}";
-        }
-
         
+       
     }
 
     // FHIR Resource Representation (Separate Class)
@@ -205,21 +189,7 @@ namespace BlockChainHealthInfo
         public List<DbObservation> DbObservations { get; set; } = new List<DbObservation>();
         public List<DbMedicalHistory> DbMedicalHistories { get; set; } = new List<DbMedicalHistory>();
 
-        [Required]
-        [Column("RecordedDate")]
-        public DateTime RecordedDate { get; set; } = DateTime.Now;
-
-        // signed Record
-        public string Signature { get; set; }
-        byte[] IAuditableEntity.SignedDataBlob { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
-        DateTime IAuditableEntity.SignatureExpiry { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
-
-        public string GenerateSignature()
-        {
-            return $"{Id}|{RecordedDate}";
-        }
-
-        public string SnapshotVersion { get; set; }
+        
     }
 
     [FhirType("Encounter")]
@@ -331,20 +301,7 @@ namespace BlockChainHealthInfo
         public Guid EncounterId { get; set; }
         public DbEncounter DbEncounters { get; set; }
 
-        [Required]
-        [Column("RecordedDate")]
-        public DateTime RecordedDate { get; set; } = DateTime.Now;
-
-        // signed Record
-        public string Signature { get; set; }
-        byte[] IAuditableEntity.SignedDataBlob { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
-        DateTime IAuditableEntity.SignatureExpiry { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
-
-        public string GenerateSignature()
-        {
-            return $"{Id}|{RecordedDate}";
-        }
-        public string SnapshotVersion { get; set; }
+        
     }
 
     [FhirType("Observation")]
@@ -398,20 +355,7 @@ namespace BlockChainHealthInfo
         public Guid EncounterId { get; set; }
         public DbEncounter DbEncounters { get; set; }
 
-        [Required]
-        [Column("RecordedDate")]
-        public DateTime RecordedDate { get; set; } = DateTime.Now;
-
-        // signed Record
-        public string Signature { get; set; }
-        byte[] IAuditableEntity.SignedDataBlob { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
-        DateTime IAuditableEntity.SignatureExpiry { get => throw new NotImplementedException(); set => throw new NotImplementedException(); }
-
-        public string GenerateSignature()
-        {
-            return $"{Id}|{RecordedDate}";
-        }
-        public string SnapshotVersion { get; set; }
+        
     }
 
     [FhirType("Annotation")]

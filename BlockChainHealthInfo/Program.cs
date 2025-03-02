@@ -1,7 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using AutoMapper;
 using BlockChainHealthInfo;
-using BlockChainHealthInfo.DigitalSignatureManagement;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,11 +38,9 @@ public class Program
         {
             var configuration = provider.GetRequiredService<IConfiguration>();
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
-                   .UseQueryTrackingBehavior(QueryTrackingBehavior.TrackAll)
-                   .AddInterceptors(provider.GetRequiredService<SignatureValidationInterceptor>());
+                   .UseQueryTrackingBehavior(QueryTrackingBehavior.TrackAll);
         });
 
-        services.AddScoped<SignatureValidationInterceptor>();
 
         // Register BlockchainService
         services.AddSingleton<BlockchainService>(provider =>
@@ -59,16 +56,9 @@ public class Program
 
         // Register Key Management Services
         // Register SecureKeyStorage
-        services.AddSingleton<IKeyStorage, SecureKeyStorage>(provider =>
-            new SecureKeyStorage(
-                Environment.GetEnvironmentVariable("smart-contract")));
-
-        services.AddSingleton<IDigitalSignatureService, DigitalSignatureService>();
-        services.AddHostedService<SignatureCleanupService>();
-        services.AddHostedService<KeyRotationService>();
+       
 
         // Register Audit Services
-        services.AddSingleton<AuditLogger>();
         services.AddTransient<AuditTrailService>();
 
 
@@ -189,7 +179,6 @@ public class Program
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var auditService = scope.ServiceProvider.GetRequiredService<AuditTrailService>();
 
-        var digitalSignatureService = scope.ServiceProvider.GetRequiredService<IDigitalSignatureService>();
 
         var patient = new DbPatient { Id = Guid.NewGuid() };
 
@@ -210,20 +199,10 @@ public class Program
 
 
 
-        // Sign the patient data
-        var patientData = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(patient));
-        DateTime timestamp = DateTime.UtcNow; // Explicit timestamp
-        var (signature, snapshotVersion) = digitalSignatureService.SignData(patientData, timestamp, TimeSpan.FromHours(1));
-
-        // Store signature, snapshot version, and signed data
-        patient.Signature = Convert.ToBase64String(signature);
-        patient.SnapshotVersion = snapshotVersion;
-        patient.SignedDataBlob = digitalSignatureService.GetFullSignedData(patientData, timestamp, TimeSpan.FromHours(1));
-
         await dbContext.DbPatients.AddAsync(patient);
         await dbContext.SaveChangesAsync();
 
-        // Log initial creation in blockchain
+        // Log initial creation
         auditService.LogChanges(
             patient,
             new List<AuditEntry> { new AuditEntry("System", "Initial Creation", null) },
@@ -242,7 +221,6 @@ public class Program
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var digitalSignatureService = scope.ServiceProvider.GetRequiredService<IDigitalSignatureService>();
 
         var patient = await dbContext.DbPatients.FindAsync(patientId);
         if (patient == null)
@@ -718,7 +696,7 @@ public class Program
 
     private static async Task ViewPatientHistory()
     {
-        Console.Write("Enter Patient ID: ");
+        Console.Write("Enter Entity ID: ");
         var entityId = Guid.Parse(Console.ReadLine());
 
         var history = _auditTrailService.GetEntityHistory(entityId);

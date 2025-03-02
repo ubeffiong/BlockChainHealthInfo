@@ -1,5 +1,4 @@
 ﻿using AutoMapper;
-using BlockChainHealthInfo.DigitalSignatureManagement;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using System;
@@ -19,12 +18,7 @@ namespace BlockChainHealthInfo
     {
         Guid Id { get; set; }
 
-        // Signed Entity
-        string GenerateSignature();
-        byte[] SignedDataBlob { get; set; }
-        DateTime SignatureExpiry { get; set; }
-        string Signature { get; set; }
-        public string SnapshotVersion { get; set; }
+        
     }
 
     public class AuditRecord
@@ -42,18 +36,12 @@ namespace BlockChainHealthInfo
         private readonly BlockchainService _blockchain;
         private readonly AppDbContext _context;
 
-        private readonly IDigitalSignatureService _signatureService;
-        private readonly AuditLogger _auditLogger;
-
-
-        public AuditTrailService(BlockchainService blockchain, AppDbContext context, IDigitalSignatureService signatureService,
-        AuditLogger auditLogger)
+        
+        public AuditTrailService(BlockchainService blockchain, AppDbContext context)
         {
             _blockchain = blockchain;
             _context = context;
 
-            _signatureService = signatureService;
-            _auditLogger = auditLogger;
         }
 
         public void LogChanges(IAuditableEntity entity, List<AuditEntry> changes, string modifiedBy)
@@ -77,10 +65,7 @@ namespace BlockChainHealthInfo
             var serialized = JsonConvert.SerializeObject(updatedEntity, settings);
             var compressed = CompressData(serialized);
 
-            // 3. Sign the data
-            var dataBytes = Encoding.UTF8.GetBytes(serialized);
-            var signature = _signatureService.SignData(dataBytes, DateTime.UtcNow, TimeSpan.FromHours(1));
-
+           
             // Create a blockchain block for this snapshot.
             var block = new Blockchain
             {
@@ -97,8 +82,6 @@ namespace BlockChainHealthInfo
             var generic = method.MakeGenericMethod(entity.GetType());
             generic.Invoke(_blockchain, new object[] { block });
 
-            // 6. Log the audit event.
-            _auditLogger.LogEvent($"Changes logged for {entity.GetType().Name} with ID {entity.Id}");
         }
 
 

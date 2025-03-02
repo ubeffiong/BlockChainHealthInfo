@@ -8,18 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="DigitalSignature.xxcs" />
-    <None Remove="KeyManagementService.xxxcs" />
-    <None Remove="Pkcs11HsmProvider.xxcs" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Include="DigitalSignature.xxcs" />
-    <Compile Include="KeyManagementService.xxxcs" />
-    <Compile Include="Pkcs11HsmProvider.xxcs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="AutoMapper" Version="13.0.1" />
     <PackageReference Include="chilkat-x64" Version="10.1.2" />
     <PackageReference Include="DotNetZip" Version="1.16.0" />
